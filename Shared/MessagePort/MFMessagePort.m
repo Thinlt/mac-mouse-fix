@@ -96,10 +96,13 @@
     if (localPort == NULL) {
         
         if (runningMainApp()) {
-            DDLogInfo(@"Failed to create a local message port. It will probably work anyway for some reason");
+            DDLogWarn(@"Failed to create a local message port. It will probably work anyway for some reason");
         } else {
-            DDLogError(@"Failed to create a local message port. This might be because there is another instance of %@ already running. Crashing the app.", kMFHelperName);
-            @throw [NSException exceptionWithName:@"NoMessagePortException" reason:@"Couldn't create a local CFMessagePort. Can't function properly without local CFMessagePort" userInfo:nil];
+            DDLogError(@"Failed to create a local message port for the Helper. This is likely because another instance of Mac Mouse Fix Helper is already running (Mach port conflict).");
+            /// Instead of throwing an exception which might lead to confusing crash reports, we'll just exit.
+            /// The Main App should be able to detect that the Helper isn't responding and show appropriate instructions.
+            // exit(0); /// Or we could just return and let the app fail normally if that's safer.
+            // @throw ... (Old behavior)
         }
         
         return;

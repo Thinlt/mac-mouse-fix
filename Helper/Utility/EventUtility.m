@@ -9,6 +9,7 @@
 
 
 #import "EventUtility.h"
+#import <os/lock.h>
 #import "MFHIDEventImports.h"
 #import "IOUtility.h"
 #import "SharedUtility.h"
@@ -136,6 +137,7 @@ IOHIDDeviceRef _Nullable HIDEventGetSendingDevice(HIDEvent *hidEvent) {
     return getSendingDeviceWithSenderID(senderID);
 }
 
+
 IOHIDDeviceRef _Nullable getSendingDeviceWithSenderID(uint64_t senderID) {
     
     /// Pass in the senderID obtained from a CGEvent from field 87
@@ -146,6 +148,10 @@ IOHIDDeviceRef _Nullable getSendingDeviceWithSenderID(uint64_t senderID) {
     ///                 We could either use a weak reference or check if the IOHIDDeviceRef is still physically connected  before returning it. For a weak ref, we could create something like an MFWeakWrapper object or use NSMapTable with weak values. Using NSCache / staticobject() / threadobject() instead of raw static NSDictionary would probably be good. (static NSDictionary is also not thread-safe – as long as we're not using a single 'IOThread', that could be problematic.)
     
     static NSMutableDictionary *_hidDeviceCache = nil;
+    static os_unfair_lock cacheLock = OS_UNFAIR_LOCK_INIT;
+    
+    os_unfair_lock_lock(&cacheLock);
+    
     if (_hidDeviceCache == nil) {
         _hidDeviceCache = [NSMutableDictionary dictionary];
     }
@@ -153,12 +159,19 @@ IOHIDDeviceRef _Nullable getSendingDeviceWithSenderID(uint64_t senderID) {
     id iohidDeviceFromCache = _hidDeviceCache[@(senderID)];
     
     if (iohidDeviceFromCache != nil) {
+        os_unfair_lock_unlock(&cacheLock);
         return (__bridge IOHIDDeviceRef)iohidDeviceFromCache;
     }
     
+    os_unfair_lock_unlock(&cacheLock);
+    
     IOHIDDeviceRef iohidDevice = copySendingDevice_Reliable(senderID);
     
-    _hidDeviceCache[@(senderID)] = (__bridge_transfer id _Nullable)(iohidDevice); /// Should we do this when the iohidDevice is NULL? || [May 2025] Setting nil to an NSDictionary like this should simply remove the key. Casting to `_Nullable` here makes no sense.
+    if (iohidDevice != NULL) {
+        os_unfair_lock_lock(&cacheLock);
+        _hidDeviceCache[@(senderID)] = (__bridge id _Nullable)(iohidDevice);
+        os_unfair_lock_unlock(&cacheLock);
+    }
     
     return iohidDevice;
 }

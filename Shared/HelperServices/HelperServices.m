@@ -160,24 +160,29 @@
                 
             /// Cleanup
             ///     Remove residue & prevent interference
-            {
+            if (enable) {
                 
-                /// Delete legacy launchd.plist files
-                removeLaunchdPlist();
-                removePrefpaneLaunchdPlist();
+                DDLogInfo(@"enableHelperAsUserAgent: enable=YES, checking if helper is already active...");
+                BOOL alreadyActive = [self helperIsActive];
+                DDLogInfo(@"enableHelperAsUserAgent: helperIsActive returned: %d", alreadyActive);
                 
-                /// Unregister pre-SM helper from launchd
-                removeServiceWithIdentifier(kMFLaunchdHelperIdentifier);
-                
-                if (enable) {
-                    /// Unregister if enabling
-                    /// - This is necessary for enabling to work after updating to new version in the same place while the old helper is still running
-                    /// - removeServiceWithIdentifier() also works for this, but it leads to the helper weirdly enabling twice which causes the `is-strange-helper-alert` message to be shown twice
-                    ///     Update: [Sep 2025] This sounds like a bug on Apple's side that may have been fixed along with the other bugs on newer macOS versions.
+                if (alreadyActive) {
+                    DDLogInfo(@"Helper is already active. Skipping aggressive cleanup to avoid TCC resets.");
+                } else {
+                    DDLogInfo(@"Helper not active. Performing aggressive cleanup...");
+                    
+                    /// Delete legacy launchd.plist files
+                    removeLaunchdPlist();
+                    removePrefpaneLaunchdPlist();
+                    
+                    /// Unregister pre-SM helper from launchd
+                    removeServiceWithIdentifier(kMFLaunchdHelperIdentifier);
+                    removeServiceWithIdentifier(kMFLaunchdHelperIdentifierSM);
+                    
+                    /// Unregister if enabling (to ensure fresh start from current binary)
                     [self enableHelper_SM: NO];
                 
                     /// Kill non-launchd helpers
-                    ///     Non-launchd helpers can only normally happen during debugging I think.
                     [HelperServices terminateAllHelperInstances];
                 }
             }
@@ -316,8 +321,27 @@
 + (BOOL)helperIsActive_Message {
 
     if (runningMainApp()) {
-                NSNumber *response = (NSNumber *)[MFMessagePort sendMessage:@"getBundleVersion" withPayload:nil waitForReply:YES];
-        return response != nil && response.integerValue == Locator.bundleVersion;
+        DDLogInfo(@"Checking if helper is active via message port...");
+        NSNumber *response = (NSNumber *)[MFMessagePort sendMessage:@"getBundleVersion" withPayload:nil waitForReply:YES];
+        
+        if (response == nil) {
+            DDLogWarn(@"Helper is NOT active - no response from message port");
+            return NO;
+        }
+        
+        NSInteger helperVersion = response.integerValue;
+        NSInteger mainAppVersion = Locator.bundleVersion;
+        
+        DDLogInfo(@"Helper version: %ld, Main app version: %ld", (long)helperVersion, (long)mainAppVersion);
+        
+        BOOL versionsMatch = helperVersion == mainAppVersion;
+        if (!versionsMatch) {
+            DDLogWarn(@"Helper is active but VERSION MISMATCH! Helper: %ld, App: %ld", (long)helperVersion, (long)mainAppVersion);
+        } else {
+            DDLogInfo(@"Helper is ACTIVE and versions match");
+        }
+        
+        return versionsMatch;
         
     } else {
         /// Crash
@@ -419,19 +443,26 @@ static BOOL helperIsActive_PList(void) {
         if (enable) {
             BOOL success = [service registerAndReturnError:&error];
             if (!success){
-                NSLog(@"Failed to register Helper with error: %@", error);
+                DDLogError(@"Failed to register Helper via SMAppService with error: %@", error);
+                
+                /// Fallback to legacy registration
+                DDLogInfo(@"Attempting fallback to legacy launchd registration...");
+                [HelperServices repairLaunchdPlist]; /// Generate / repair launchd.plist
+                enableHelper_PList(YES);
             } else {
-                NSLog(@"Registered Helper!");
+                DDLogInfo(@"Registered Helper via SMAppService!");
             }
         } else {
             BOOL success = [service unregisterAndReturnError:&error];
             if (!success){
-                NSLog(@"Failed to UNregister Helper with error: %@", error);
+                DDLogError(@"Failed to UNregister Helper via SMAppService with error: %@", error);
+                
+                /// Fallback to legacy unregistration
+                ///   Notes: [Jan 2026] Legacy unregistration is already handled at the beginning of enableHelperAsUserAgent. 
+                ///     Adding it here causes race conditions (specifically deleting the plist file mid-registration).
             } else {
-                NSLog(@"Unregistered Helper.");
+                DDLogInfo(@"Unregistered Helper via SMAppService.");
             }
-            
-            
         }
         
         return error;
@@ -740,18 +771,25 @@ static void removeLaunchdPlist(void) {
             // I was running Mac Mouse Fix Helper standalone for debugging, not embedded in the main app
             NSMutableDictionary *newlaunchdPlist_dict = [NSPropertyListSerialization propertyListWithData:defaultlaunchdPlist_data options:NSPropertyListMutableContainersAndLeaves format:nil error:&error];
             
-            /// Set the executable path to the correct value
+            /// Set the Label and executable path to the correct value
+            [newlaunchdPlist_dict setValue: kMFBundleIDHelper forKey:@"Label"];
             [newlaunchdPlist_dict setValue: helperExecutablePath forKey:@"Program"];
             
             /// Get NSData from newLaunchdPlist dict
             NSData *newLaunchdPlist_data = [NSPropertyListSerialization dataWithPropertyList:newlaunchdPlist_dict format:NSPropertyListXMLFormat_v1_0 options:0 error:&error];
             NSAssert(error == nil, @"Failed to create NSData from new launchdPlist dict");
             
-            /// Write new newLaunchdPlist data to file
-            [newLaunchdPlist_data writeToFile:launchdPlist_path options:NSDataWritingAtomic error:&error];
+            /// Log
+            DDLogInfo(@"Writing launchdPlist to: %@", launchdPlist_path);
             
-            if (error != nil) {
-                DDLogError(@"repairUserAgentConfigFile() -- Data Serialization Error: %@", error);
+            /// Write new newLaunchdPlist data to file
+            NSError *writeError = nil;
+            BOOL writeSuccess = [newLaunchdPlist_data writeToFile:launchdPlist_path options:NSDataWritingAtomic error:&writeError];
+            
+            if (!writeSuccess) {
+                DDLogError(@"Failed to write launchdPlist to %@ with error: %@", launchdPlist_path, writeError);
+            } else {
+                DDLogInfo(@"Successfully wrote launchdPlist to %@", launchdPlist_path);
             }
         } else {
             DDLogInfo(@"Nothing to repair");

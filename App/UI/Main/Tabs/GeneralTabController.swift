@@ -298,7 +298,7 @@ extension Reactive where Base: NSSwitcherino {
         
         return BindingTarget(lifetime: base.reactive.lifetime) { newValue in
             if (base.state == .on) != newValue {
-                base.performClick(nil)
+                base.state = newValue ? .on : .off
             }
         }
     }

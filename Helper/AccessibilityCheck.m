@@ -278,6 +278,17 @@
     ///     But it seems making the helper show up in System Settings only works the first time calling this func after the helper has been launched.
     Boolean isTrusted = AXIsProcessTrustedWithOptions(options);
     
+    DDLogInfo(@"Accessibility Check - Trusted with options: %d", isTrusted);
+    
+    if (!isTrusted) {
+        /// Fallback check without options (might give different result if options are problematic)
+        Boolean isTrustedPlain = AXIsProcessTrusted();
+        DDLogInfo(@"Accessibility Check - Trusted plain: %d", isTrustedPlain);
+        if (isTrustedPlain) {
+            isTrusted = YES;
+        }
+    }
+    
     /// Release & return
     CFRelease(options);
     return isTrusted;

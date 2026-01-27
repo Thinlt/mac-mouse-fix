@@ -111,14 +111,18 @@ import ReactiveSwift
     ///     Are these wrappers around HelperServices necessary? If not we should remove them / make them private
     
     @objc func enable(onComplete: ((NSError?) -> Void)?) {
+        if isEnabled() {
+            onComplete?(nil)
+            return
+        }
         HelperServices.enableHelperAsUserAgent(true) { swiftError in
-            onComplete?(swiftError as NSError?) /// Swift converts the NSError that `.enableHelperAsUserAgent` returns to it's onComplete arg to some weird abstract Swift error, so we have to cast it back here. Swift is sooooo annoying I swear to god.
+            onComplete?(swiftError as NSError?)
         }
     }
     @objc func disable() {
-        
-        /// What happens if we call `enableHelperAsUserAgent(false, ...` directly? Will it break things?
-        
+        if !isEnabled() {
+            return
+        }
         HelperServices.enableHelperAsUserAgent(false, onComplete: nil)
         observer.send(value: false)
     }
