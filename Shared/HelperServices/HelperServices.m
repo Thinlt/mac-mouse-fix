@@ -236,18 +236,19 @@
       /// Cleanup
       ///     Remove residue & prevent interference
       if (enable) {
-
-        DDLogInfo(@"enableHelperAsUserAgent: enable=YES, checking if helper is "
-                  @"already active...");
+#if IS_MAIN_APP
+        DDLogInfo("enableHelperAsUserAgent: enable=YES, checking if helper is "
+                  "already active...");
         BOOL alreadyActive = [self helperIsActive];
-        DDLogInfo(@"enableHelperAsUserAgent: helperIsActive returned: %d",
+        DDLogInfo("enableHelperAsUserAgent: helperIsActive returned: %d",
                   alreadyActive);
 
         if (alreadyActive) {
-          DDLogInfo(@"Helper is already active. Skipping aggressive cleanup to "
-                    @"avoid TCC resets.");
+          DDLogInfo("Helper is already active. Skipping aggressive cleanup to "
+                    "avoid TCC resets.");
         } else {
-          DDLogInfo(@"Helper not active. Performing aggressive cleanup...");
+#endif
+          DDLogInfo("Helper not active. Performing aggressive cleanup...");
 
           /// Delete legacy launchd.plist files
           removeLaunchdPlist();
@@ -262,7 +263,9 @@
 
           /// Kill non-launchd helpers
           [HelperServices terminateAllHelperInstances];
+#if IS_MAIN_APP
         }
+#endif
       }
 
       /// Enable helper 
@@ -436,39 +439,32 @@
 #if IS_MAIN_APP
 + (BOOL)helperIsActive_Message {
 
-  if (runningMainApp()) {
-    DDLogInfo(@"Checking if helper is active via message port...");
-    NSNumber *response =
-        (NSNumber *)[MFMessagePort sendMessage:@"getBundleVersion"
-                                   withPayload:nil
-                                  waitForReply:YES];
+  DDLogInfo("Checking if helper is active via message port...");
+  NSNumber *response =
+      (NSNumber *)[MFMessagePort sendMessage:@"getBundleVersion"
+                                 withPayload:nil
+                                waitForReply:YES];
 
-    if (response == nil) {
-      DDLogWarn(@"Helper is NOT active - no response from message port");
-      return NO;
-    }
-
-    NSInteger helperVersion = response.integerValue;
-    NSInteger mainAppVersion = Locator.bundleVersion;
-
-    DDLogInfo(@"Helper version: %ld, Main app version: %ld",
-              (long)helperVersion, (long)mainAppVersion);
-
-    BOOL versionsMatch = helperVersion == mainAppVersion;
-    if (!versionsMatch) {
-      DDLogWarn(@"Helper is active but VERSION MISMATCH! Helper: %ld, App: %ld",
-                (long)helperVersion, (long)mainAppVersion);
-    } else {
-      DDLogInfo(@"Helper is ACTIVE and versions match");
-    }
-
-    return versionsMatch;
-
-  } else {
-    /// Crash
-    assert(false);
-    abort();
+  if (response == nil) {
+    DDLogWarn("Helper is NOT active - no response from message port");
+    return NO;
   }
+
+  NSInteger helperVersion = response.integerValue;
+  NSInteger mainAppVersion = Locator.bundleVersion;
+
+  DDLogInfo("Helper version: %ld, Main app version: %ld",
+            (long)helperVersion, (long)mainAppVersion);
+
+  BOOL versionsMatch = helperVersion == mainAppVersion;
+  if (!versionsMatch) {
+    DDLogWarn("Helper is active but VERSION MISMATCH! Helper: %ld, App: %ld",
+              (long)helperVersion, (long)mainAppVersion);
+  } else {
+    DDLogInfo("Helper is ACTIVE and versions match");
+  }
+
+  return versionsMatch;
 }
 #endif
 
@@ -600,21 +596,21 @@ static BOOL helperIsActive_PList(void) {
     if (enable) {
       BOOL success = [service registerAndReturnError:&error];
       if (!success) {
-        DDLogError(@"Failed to register Helper via SMAppService with error: %@",
+        DDLogError("Failed to register Helper via SMAppService with error: %@",
                    error);
 
         /// Fallback to legacy registration
-        DDLogInfo(@"Attempting fallback to legacy launchd registration...");
+        DDLogInfo("Attempting fallback to legacy launchd registration...");
         [HelperServices repairLaunchdPlist]; /// Generate / repair launchd.plist
         enableHelper_PList(YES);
       } else {
-        DDLogInfo(@"Registered Helper via SMAppService!");
+        DDLogInfo("Registered Helper via SMAppService!");
       }
     } else {
       BOOL success = [service unregisterAndReturnError:&error];
       if (!success) {
         DDLogError(
-            @"Failed to UNregister Helper via SMAppService with error: %@",
+            "Failed to UNregister Helper via SMAppService with error: %@",
             error);
 
         /// Fallback to legacy unregistration
@@ -623,7 +619,7 @@ static BOOL helperIsActive_PList(void) {
         ///     Adding it here causes race conditions (specifically deleting the
         ///     plist file mid-registration).
       } else {
-        DDLogInfo(@"Unregistered Helper via SMAppService.");
+        DDLogInfo("Unregistered Helper via SMAppService.");
       }
     }
 
@@ -1060,7 +1056,7 @@ static void removeLaunchdPlist(void) {
                @"Failed to create NSData from new launchdPlist dict");
 
       /// Log
-      DDLogInfo(@"Writing launchdPlist to: %@", launchdPlist_path);
+      DDLogInfo("Writing launchdPlist to: %@", launchdPlist_path);
 
       /// Write new newLaunchdPlist data to file
       NSError *writeError = nil;
@@ -1069,10 +1065,10 @@ static void removeLaunchdPlist(void) {
                                                       error:&writeError];
 
       if (!writeSuccess) {
-        DDLogError(@"Failed to write launchdPlist to %@ with error: %@",
+        DDLogError("Failed to write launchdPlist to %@ with error: %@",
                    launchdPlist_path, writeError);
       } else {
-        DDLogInfo(@"Successfully wrote launchdPlist to %@", launchdPlist_path);
+        DDLogInfo("Successfully wrote launchdPlist to %@", launchdPlist_path);
       }
     } else {
       DDLogInfo("Nothing to repair");

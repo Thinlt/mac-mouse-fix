@@ -18,7 +18,7 @@
             if ([self superview]) {
                 NSInteger row = [(NSTableView *)[[self superview] superview] rowForView: self];
                 if (row == 1) {
-                    DDLogDebug(@"wrapdbg: setFrame: (%p) (row: %ld) %@", self, row, NSStringFromRect(frame));
+                    DDLogDebug("wrapdbg: setFrame: (%p) (row: %ld) %@", self, row, NSStringFromRect(frame));
                 }
             }
             [super setFrame: frame];
