@@ -76,13 +76,22 @@ import ReactiveSwift
         let dict = payload as? NSDictionary
         if let dict = dict,
            let helperVersion = (dict["bundleVersion"] as? NSNumber)?.intValue,
-           (dict["mainAppURL"] as? NSURL) != nil {
+           let helperMainAppURL = dict["mainAppURL"] as? NSURL {
             
             let mainAppVersion = Locator.bundleVersion();
+            let mainAppURL = Locator.mainAppBundle().bundleURL as NSURL
+            
+            DDLogInfo("Strangeness Check - Helper Version: \(helperVersion), Main App Version: \(mainAppVersion)")
+            DDLogInfo("Strangeness Check - Helper MainAppURL: \(helperMainAppURL.absoluteString ?? "nil"), Main App URL: \(mainAppURL.absoluteString ?? "nil")")
             
             if mainAppVersion == helperVersion {
                 isStrange = false;
+                DDLogInfo("Strangeness Check - Versions match. Not strange.")
+            } else {
+                DDLogWarn("Strangeness Check - Version mismatch!")
             }
+        } else {
+            DDLogWarn("Strangeness Check - Could not extract info from helper payload: \(payload)")
         }
         
         if isStrange {
